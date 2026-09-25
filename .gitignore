@@ -9,3 +9,4 @@ settings.json
 .DS_Store
 test_images/
 *.rqtest
+models.json

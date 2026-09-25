@@ -9,11 +9,11 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from core import AI_TOOLS, check_render, score_level
+from core import check_render, score_level
 from core.imageio import encode_png, fit_within, to_rgb
 from core.report import ToolSummary, build_comparison_summary, to_png_bytes
 
-from .common import guess_tool, legend, read_upload, tool_index
+from .common import legend, read_upload, tool_model_picker
 from .settings_panel import current_settings, settings_panel
 
 LEVEL_COLORS = {"good": "#1f9d55", "ok": "#d97706", "bad": "#dc2626"}
@@ -95,8 +95,8 @@ def _job_card(job: dict, index: int) -> list:
                     continue
                 c1, c2 = st.columns([1, 2], vertical_alignment="center")
                 c1.image(to_rgb(fit_within(img, 400)), width="stretch")
-                tool = c2.selectbox(f"Which AI tool made **{f.name}**?", AI_TOOLS,
-                                    index=tool_index(guess_tool(f.name)), key=f"j_{jid}_tool_{f.file_id}")
+                c2.caption(f"**{f.name}**")
+                _, _, tool = tool_model_picker(f"j_{jid}_tool_{f.file_id}", f.name, c2)
                 if original is not None:
                     tasks.append((jid, name, original, f, tool))
         if files and original is None:
@@ -155,7 +155,7 @@ def _results(rows: list[dict]) -> None:
     settings = current_settings()
     board = pd.DataFrame({
         "Rank": range(1, len(tools) + 1),
-        "AI tool": [t.tool for t in tools],
+        "AI tool · model": [t.tool for t in tools],
         "Average score": [round(t.average, 1) for t in tools],
         "Renders checked": [t.count for t in tools],
         "Verdict": [score_level(t.average, settings)[1] for t in tools],
@@ -166,10 +166,10 @@ def _results(rows: list[dict]) -> None:
         .mark_bar(cornerRadiusEnd=6, height=28)
         .encode(
             x=alt.X("Average score:Q", scale=alt.Scale(domain=[0, 100]), title=None),
-            y=alt.Y("AI tool:N", sort=None, title=None, axis=alt.Axis(labelFontSize=14, labelLimit=260)),
+            y=alt.Y("AI tool · model:N", sort=None, title=None, axis=alt.Axis(labelFontSize=14, labelLimit=260)),
             color=alt.Color("level:N", scale=alt.Scale(domain=list(LEVEL_COLORS), range=list(LEVEL_COLORS.values())),
                             legend=None),
-            tooltip=["AI tool", "Average score", "Renders checked", "Verdict"],
+            tooltip=["AI tool · model", "Average score", "Renders checked", "Verdict"],
         )
     )
     labels = chart.mark_text(align="left", dx=8, fontSize=14, fontWeight="bold", color="#1c1c1c").encode(
@@ -205,7 +205,7 @@ def _exports(rows: list[dict], tools: list[ToolSummary]) -> None:
     when = st.session_state.get("bake_time", datetime.now())
     csv = pd.DataFrame([
         {
-            "Job": r["job"], "AI tool": r["tool"], "Render file": r["file"],
+            "Job": r["job"], "AI tool · model": r["tool"], "Render file": r["file"],
             "Score (0-100)": r.get("score"), "Verdict": r.get("label", r.get("error")),
             "Model lines kept (%)": round(100 * r["recall"], 1) if "recall" in r else None,
             "New lines in render (%)": round(100 * (1 - r["precision"]), 1) if "precision" in r else None,

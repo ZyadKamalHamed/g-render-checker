@@ -10,6 +10,7 @@ import numpy as np
 import streamlit as st
 
 from core import AI_TOOLS, CheckResult, ImageLoadError, Settings, load_image, load_settings
+from core.models import guess_model, known_models, label, remember_model
 
 EXPLANATIONS = {
     "good": "The render kept your model's geometry. Small differences are normal.",
@@ -35,6 +36,26 @@ def guess_tool(filename: str) -> str | None:
 
 def tool_index(tool: str | None) -> int:
     return AI_TOOLS.index(tool) if tool in AI_TOOLS else AI_TOOLS.index("Other")
+
+
+def tool_model_picker(key: str, filename: str | None = None, container=None) -> tuple[str, str, str]:
+    """Tool (any name allowed) + optional model inside it. Returns (tool, model, label)."""
+    c = container or st
+    known = known_models()
+    left, right = c.columns(2)
+    tool = left.selectbox(
+        "AI tool", AI_TOOLS, index=tool_index(guess_tool(filename) if filename else None), key=f"{key}_tool",
+        accept_new_options=True, help="Pick one, or type a new name.",
+    ) or "Other"
+    guessed = guess_model(filename, known) if filename else None
+    model = right.selectbox(
+        "Model (optional)", known, index=known.index(guessed) if guessed else None, key=f"{key}_model",
+        accept_new_options=True, placeholder="e.g. Nano Banana Pro",
+        help="Which model inside the tool. Type a new one to add it.",
+    ) or ""
+    if model:
+        remember_model(model)
+    return tool, model, label(tool, model)
 
 
 @st.cache_data(show_spinner=False, max_entries=64)

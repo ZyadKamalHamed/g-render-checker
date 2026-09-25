@@ -7,12 +7,12 @@ from datetime import datetime
 
 import streamlit as st
 
-from core import AI_TOOLS, check_render
+from core import check_render
 from core.imageio import fit_within, to_rgb
 from core.report import build_report, to_pdf_bytes, to_png_bytes
 
 from .common import (
-    guess_tool, legend, read_upload, safe_filename, score_card, show_messages, step, tool_index,
+    legend, read_upload, safe_filename, score_card, show_messages, step, tool_model_picker,
 )
 from .components import fader, mask_painter
 from .settings_panel import current_settings, settings_panel
@@ -47,11 +47,9 @@ def render() -> None:
         if render_img is not None:
             st.image(to_rgb(fit_within(render_img, 900)), width="stretch")
 
-    step(2, "Which AI tool made this?")
+    step(2, "Which AI tool and model made this?")
     tool_key = f"c_tool_{rend_file.file_id}" if rend_file else "c_tool"
-    guessed = guess_tool(rend_file.name) if rend_file else None
-    tool = st.selectbox("Which AI tool made this?", AI_TOOLS, index=tool_index(guessed), key=tool_key,
-                        label_visibility="collapsed")
+    _, _, tool = tool_model_picker(tool_key, rend_file.name if rend_file else None)
 
     step(3, "Ignore areas (optional)")
     mask = None
