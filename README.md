@@ -27,7 +27,7 @@ It keeps running in the background, so double-clicking again simply reopens it.
 
 1. Drag your **original model view** (a screenshot or export from SketchUp or Vectorworks) into the left box.
 2. Drag the **AI render** into the right box.
-3. Pick which AI tool made it. Render QA guesses from the file name if it can.
+3. Pick which AI tool made it and, if you like, which model inside it (for example **Leonardo · Nano Banana Pro**). Render QA guesses from the file name if it can. Type a new name to add it; model names you type are remembered for next time.
 4. *Optional:* switch on **Skip some areas** and paint over anything you don't care about, such as floors, walls, sky or people. Painted areas aren't scored.
 5. Press **Check render**.
 
@@ -53,11 +53,46 @@ Use the **fade slider** to flick between your model and the render. **Download r
 
 Use this to find out which AI tool suits your projects best.
 
-1. Each **job** is one model view plus the renders different tools made from it. Add the model view, then drop in all the renders. Set the AI tool for each render.
+1. Each **job** is one model view plus the renders different tools made from it. Add the model view, then drop in all the renders. Set the AI tool, and optionally the model, for each render.
 2. Press **Add another job** for more views. Three to five jobs give a fair comparison.
 3. Press **Run all checks**.
 
 The leaderboard ranks the tools by average score, as a chart and as a table. Open any job to see what each tool changed. You can download a **summary image** for sharing and a **CSV** for Excel.
+
+### Run a prompt test
+
+Use this to test how well each AI model follows a chain of edits: the same prompts, one after the other, run through several models.
+
+1. **Add your model view.** This is the SketchUp or Vectorworks view the first render was made from.
+2. **Your prompts.** You start with seven. Each shows a short headline; open it to:
+   - paste the **full prompt** you used;
+   - set the **type**: an **Edit** asks for a change, a **Guardrail** is a prompt the model should refuse;
+   - choose what it **starts from**: the previous prompt's render (the default), the model view, or any earlier prompt;
+   - **move it up or down**, or remove it. **Add prompt** adds another.
+3. **Change zones.** For each edit, switch on **Change zone** and paint where you asked the AI to change things. You can also tick whole **materials** (M1, M2…) the prompt was about. Everything outside the zone is judged on staying the same.
+4. **Models and renders.** Pick a tool and model and press **Add model**. In its tab, drop each render next to its prompt, or drop them all at once: files with `p1`…`p7` (or `prompt 3`, `render_03`) in the name go to that prompt, and the rest fill empty prompts in order.
+   - Give each render a **star rating** (1–5) for how well it did what you asked.
+   - For guardrail prompts, record **what it did**: refused, complied, or something in between.
+5. *Optional:* write **your recommendation**. It goes into the exec report.
+6. Press **Run all checks**.
+
+You'll get a leaderboard, a **Quality over edits** chart, and a grid of every render with its markup. Press **Details** on any render to see the markup, the materials and the fade slider.
+
+| Score | What it measures |
+|---|---|
+| **Kept** | Did it keep the lines and materials outside the change zone? |
+| **Changed** | A warning (not a penalty) when almost nothing changed inside the zone. |
+| **Drift** | How far the render has moved from your original model view, leaving out every zone so far. |
+| **Quality** | Compared with the model's first render, does the image lose sharpness, shift colour, pick up artefacts or shrink as edits pile up? Measured only where no prompt asked for a change. |
+| **Your rating** | Your stars, turned into a score out of 100. |
+| **Guardrails** | How many guardrail prompts each model refused or went along with. Shown alongside, not scored. |
+| **Overall** | Kept 35, Your rating 30, Drift 20, Quality 15. Missing parts are left out. |
+
+Changing a rating updates the results straight away. If you change a zone or a render, Render QA asks you to run the checks again.
+
+**Download test** saves everything (images, prompts, zones, ratings) in one `.rqtest` file. Drag it into **Open a saved test** later to carry on. Nothing is kept unless you download it.
+
+**Download exec report** gives you a PowerPoint deck in the TGS style: the answer, the leaderboard, how the test worked, the degradation chart, one slide per prompt and the biggest misses. **Download results** gives you a CSV for Excel.
 
 ### Tips for fair results
 
@@ -113,7 +148,7 @@ Render QA uses very little while idle, so there's usually no need to stop it. It
 
 ### Updating
 
-Replace the files with the new version, keeping `settings.json` if you've saved custom settings. Then run **Set up** again.
+Replace the files with the new version, keeping `settings.json` (custom settings) and `models.json` (model names people have typed). Then run **Set up** again.
 
 ### If something goes wrong
 
@@ -126,6 +161,8 @@ Replace the files with the new version, keeping `settings.json` if you've saved 
 
 - All image processing happens locally with OpenCV. No AI models, no cloud services, no accounts.
 - Uploaded images live only in memory while the app is open. They are never written to disk.
+- Prompt tests are only kept if you download them as a `.rqtest` file.
+- Model names you type are remembered in `models.json` (names only).
 - Streamlit's usage statistics are switched off (`.streamlit/config.toml`).
 - Streamlit's one built-in internet lookup is also switched off. In sharing mode it would normally look up the computer's public IP address; `serve.py` disables that.
 - The only time Render QA uses the internet is during setup, to download its components.
@@ -146,6 +183,7 @@ At the bottom of each screen, **Advanced settings** holds these controls. Most o
   - add borders;
   - stretch it.
 - **Line the images up automatically.** On by default.
+- **Prompt test weights** (Prompt test screen only). How much Kept, Your rating, Drift and Quality count towards the overall score. They're balanced automatically, so only their size relative to each other matters.
 
 **Save as default for everyone** stores the settings in `settings.json` in the Render QA folder. They then apply every time it starts, for everyone using that computer or its shared link. **Reset to defaults** undoes changes.
 
@@ -171,7 +209,7 @@ At the bottom of each screen, **Advanced settings** holds these controls. Most o
 ## For developers
 
 ```
-app.py              Streamlit entry point (navigation between the two screens)
+app.py              Streamlit entry point (navigation between the three screens)
 serve.py            Starts Streamlit with its external-IP lookup disabled
 launcher.py         Start/stop in the background; used by the double-click files
 core/               Image logic: no Streamlit imports
@@ -182,9 +220,18 @@ core/               Image logic: no Streamlit imports
   overlay.py          red/blue markup and problem-area counting
   pipeline.py         check_render(): the whole check in one call
   report.py           PNG/PDF report and comparison summary
-  settings.py         defaults, thresholds, settings.json
+  settings.py         defaults, thresholds, weights, settings.json
+  models.py           AI tool and model names, models.json
+  materials.py        material regions and the materials-kept score
+  change.py           "nothing changed in the zone" flag
+  quality.py          quality degradation: sharpness, colour, artefacts, resolution
+  prompt_test.py      prompt test data model, run_test() and summaries
+  testfile.py         save and open .rqtest files
+  deck.py             exec PowerPoint report
 ui/                 Streamlit screens, theme and custom components
+  prompt_test/        prompt test screen: setup, renders, results
   components/         brush mask painter and fade slider (plain HTML/JS)
+assets/             Logo for the exec report
 tests/              Synthetic-image tests
 samples/            Example model view and renders to try
 Admin/              Setup, sharing and stop scripts
