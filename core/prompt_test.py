@@ -459,7 +459,7 @@ def summarise(test: PromptTest, results: TestResults, settings: Settings | None 
     for m in test.models:
         ran = [results.renders[(m.id, p.id)] for p in edits
                if (m.id, p.id) in results.renders and results.renders[(m.id, p.id)].error is None]
-        ratings = [m.slots[p.id].rating for p in edits if p.id in m.slots and m.slots[p.id].rating]
+        ratings = [m.slots[r.prompt_id].rating for r in ran if m.slots[r.prompt_id].rating]
         parts = {
             "kept": _mean(r.kept for r in ran),
             "drift": _mean(r.drift for r in ran),
@@ -476,7 +476,7 @@ def summarise(test: PromptTest, results: TestResults, settings: Settings | None 
         out.append(ModelSummary(
             model_id=m.id, label=m.label, overall=overall, kept=parts["kept"], drift=parts["drift"],
             quality=parts["quality"], rating=parts["rating"], ran=len(ran), total_edit=len(edits),
-            ratings_missing=len(edits) - len(ratings), nothing_changed=sum(r.nothing_changed for r in ran),
+            ratings_missing=sum(1 for r in ran if not m.slots[r.prompt_id].rating), nothing_changed=sum(r.nothing_changed for r in ran),
             guardrails=counts, parts_used=used,
         ))
     out.sort(key=lambda x: (x.overall is None, -(x.overall or 0), -(x.kept or 0)))

@@ -389,6 +389,8 @@ def _prompt_slides(prs, test: PromptTest, results: TestResults, start_dark: bool
     for p in edit_prompts(test):
         n = prompt_number(test, p.id)
         models = test.models or []
+        if not any((m.id, p.id) in results.renders for m in models):
+            continue  # nobody ran this prompt, so a slide of "Not run" cards says nothing
         chunks = [models[i:i + MODELS_PER_SLIDE] for i in range(0, len(models), MODELS_PER_SLIDE)] or [[]]
         for chunk in chunks:
             s = _slide(prs, dark)

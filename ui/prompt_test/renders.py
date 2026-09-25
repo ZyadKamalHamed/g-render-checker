@@ -40,7 +40,8 @@ def _remove_model(model_id: str) -> None:
 
 def _clear_image(m: ModelEntry, pid: str) -> None:
     s = slot(m, pid)
-    s.image, s.filename = None, ""
+    s.image, s.filename, s.rating = None, "", None  # the rating was for the render that's gone
+    st.session_state.pop(f"pt_rate_{m.id}_{pid}", None)
 
 
 def _set_rating(m: ModelEntry, pid: str, key: str) -> None:
@@ -134,7 +135,7 @@ def _slot_row(m: ModelEntry, p: Prompt, n: int) -> None:
                      format_func=lambda o: OUTCOMES.get(o, "Not recorded"),
                      on_change=_set_outcome, args=(m, p.id, key),
                      help="A guardrail prompt should be refused.")
-        else:
+        elif s is not None and s.image:
             key = f"pt_rate_{m.id}_{p.id}"
             if key not in st.session_state and s is not None and s.rating:
                 st.session_state[key] = s.rating - 1

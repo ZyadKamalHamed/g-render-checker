@@ -62,3 +62,12 @@ def test_deck_many_models_and_missing_renders():
     texts = " ".join(_texts(s) for s in prs.slides)
     assert "Not run" in texts
     assert sum("P1 · Realistic" in _texts(s) for s in prs.slides) >= 2  # 9 models → two P1 slides
+
+
+def test_deck_skips_prompts_no_model_ran():
+    t = _chain_test()
+    t.prompts.append(Prompt(id="p4", title="Add people"))  # nobody has a render for this one
+    res = run_test(t, Settings())
+    prs = Presentation(io.BytesIO(build_deck(t, res, summarise(t, res, Settings()), datetime(2026, 9, 25))))
+    assert not any("P4 · Add people" in _texts(s) for s in prs.slides)
+    assert any("P3 · Recolour metal" in _texts(s) for s in prs.slides)

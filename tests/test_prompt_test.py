@@ -228,3 +228,20 @@ def test_assign_files_fills_detected_then_empty_edit_slots():
     assert lines[1] == "extra.png → Prompt 2"
     assert lines[2] == "again_p3.png → Prompt 4"  # prompt 3 was already taken in this drop
     assert lines[-1] == "moree.png → not used (no empty prompt left)"
+
+
+def test_ratings_missing_counts_only_renders_that_ran():
+    t = _chain_test()
+    del t.models[1].slots["p3"]  # B has no render for prompt 3, so there's nothing to rate
+    res = run_test(t, Settings())
+    b = next(s for s in summarise(t, res, Settings()) if s.model_id == "B")
+    assert b.ran == 2 and b.ratings_missing == 2
+
+
+def test_rating_without_a_render_is_ignored():
+    t = _chain_test()
+    t.models[1].slots["p4"] = Slot(rating=1)  # rated, but there's no render and no such prompt run
+    t.prompts.append(Prompt(id="p4", title="Add people"))
+    res = run_test(t, Settings())
+    b = next(s for s in summarise(t, res, Settings()) if s.model_id == "B")
+    assert b.rating is None

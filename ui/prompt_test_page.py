@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from .prompt_test import renders, setup, state
+from .prompt_test import renders, results, setup, state
 
 
 def render() -> None:
@@ -19,3 +19,4 @@ def render() -> None:
     setup.render_model_view()
     setup.render_prompts()
     renders.render_models()
+    results.render_run_and_results()

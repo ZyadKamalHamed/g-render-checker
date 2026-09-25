@@ -24,6 +24,9 @@ CSS = """
   [data-testid="stFileUploaderDropzone"]::before {
     content: "Drag an image here"; font-size: 1.05rem; font-weight: 600; color: #3f3f46;
   }
+  [class*="st-key-pt_open_"] [data-testid="stFileUploaderDropzone"]::before { content: "Drag a saved test here"; }
+  [class*="st-key-pt_bulk_"] [data-testid="stFileUploaderDropzone"]::before { content: "Drag all the renders here"; }
+  [class*="st-key-pt_up_"] [data-testid="stFileUploaderDropzone"] { min-height: 110px; }
   [data-testid="stFileUploaderDropzone"]:hover { border-color: #71717a; background: #f4f4f5; }
   [data-testid="stFileUploader"] label p { font-weight: 600; font-size: 1.02rem; }
 

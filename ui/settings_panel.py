@@ -22,6 +22,10 @@ _FIELDS = {
     "adv_ok": "ok_threshold",
     "adv_fit": "fit_mode",
     "adv_align": "auto_align",
+    "adv_w_kept": "weight_kept",
+    "adv_w_rating": "weight_rating",
+    "adv_w_drift": "weight_drift",
+    "adv_w_quality": "weight_quality",
 }
 
 
@@ -43,8 +47,9 @@ def _reset() -> None:
     st.session_state.pop("adv_preview", None)
 
 
-def settings_panel(preview_pair: tuple[np.ndarray, np.ndarray] | None = None, where: str = "") -> Settings:
-    """Render the panel and return the current settings."""
+def settings_panel(preview_pair: tuple[np.ndarray, np.ndarray] | None = None, where: str = "",
+                   weights: bool = False) -> Settings:
+    """Render the panel and return the current settings. ``weights`` adds the Prompt test weights."""
     current = get_settings()
     for key, name in _FIELDS.items():
         if key not in st.session_state:
@@ -67,6 +72,16 @@ def settings_panel(preview_pair: tuple[np.ndarray, np.ndarray] | None = None, wh
             st.radio("If the render is a different shape", list(FIT_LABELS), key="adv_fit",
                      format_func=FIT_LABELS.get, horizontal=True)
             st.toggle("Line the images up automatically", key="adv_align")
+
+        if weights:
+            st.markdown("**Prompt test weights**")
+            st.caption("How much each part counts towards a model's overall score. "
+                       "They're balanced automatically, so only their size relative to each other matters.")
+            w1, w2 = st.columns(2)
+            w1.slider("Kept (stayed the same where it should)", 0, 100, key="adv_w_kept")
+            w1.slider("Your rating", 0, 100, key="adv_w_rating")
+            w2.slider("Drift (stayed close to your model)", 0, 100, key="adv_w_drift")
+            w2.slider("Quality (no degradation over edits)", 0, 100, key="adv_w_quality")
 
         settings = Settings(**{name: st.session_state[key] for key, name in _FIELDS.items()}).validated()
         st.session_state.settings = settings
