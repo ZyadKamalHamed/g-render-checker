@@ -224,3 +224,26 @@ def test_comparison_summary_image():
         [("Lobby", {"Gendo": 90, "Leonardo": 55}), ("Café", {"Gendo": 92})],
     )
     assert img.width == 2000 and img.height > 500
+
+
+def test_check_render_exposes_valid_mask(original):
+    result = check_render(original, original.copy())
+    assert result.valid is not None and result.valid.shape == result.original.shape[:2]
+    assert result.valid.all()
+
+
+def test_reference_kind_render_scores_photoreal_pair_high():
+    from tests.synthetic import material_scene
+    a = photoreal_like(material_scene(), seed=3)
+    b = photoreal_like(material_scene(), seed=4)
+    as_model = check_render(a, b, reference_kind="model")
+    as_render = check_render(a, b, reference_kind="render")
+    assert as_render.score >= 85
+    assert as_render.score >= as_model.score - 1
+
+
+def test_image_pixels_reads_header():
+    from core.imageio import image_pixels
+    from tests.synthetic import png_bytes
+    assert image_pixels(png_bytes(np.zeros((40, 60, 3), np.uint8))) == 2400
+    assert image_pixels(b"nope") == 0

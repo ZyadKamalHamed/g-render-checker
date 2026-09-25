@@ -78,3 +78,43 @@ def harsh_photoreal(img: np.ndarray, seed: int = 0) -> np.ndarray:
     speck = rng.random((h, w)) > 0.997
     out[speck] = 255
     return np.clip(out, 0, 255).astype(np.uint8)
+
+
+# Distinct flat materials for the material and prompt-test tests. (x0, y0, x1, y1, fill BGR)
+MATERIAL_BOXES = [
+    (60, 100, 360, 700, (40, 90, 150)),  # dark timber
+    (420, 420, 820, 700, (200, 200, 195)),  # pale terrazzo
+    (880, 160, 1140, 520, (150, 110, 40)),  # blue-grey metal
+    (460, 110, 780, 330, (60, 160, 90)),  # green laminate
+]
+
+
+def material_rect(i: int) -> tuple[int, int, int, int]:
+    return MATERIAL_BOXES[i][:4]
+
+
+def material_scene(fills: dict | None = None, split: int | None = None, size=(W, H)) -> np.ndarray:
+    """Flat-colour 'SketchUp' view. ``fills`` overrides box colours; ``split`` paints the
+    right half of that box a very different colour (one material becomes two)."""
+    w, h = size
+    img = np.full((h, w, 3), 245, np.uint8)
+    cv2.line(img, (0, 720), (w, 720), (120, 120, 120), 2)
+    for i, (x0, y0, x1, y1, fill) in enumerate(MATERIAL_BOXES):
+        fill = (fills or {}).get(i, fill)
+        cv2.rectangle(img, (x0, y0), (x1, y1), fill, -1)
+        if split == i:
+            cv2.rectangle(img, ((x0 + x1) // 2, y0), (x1, y1), (230, 60, 200), -1)
+        cv2.rectangle(img, (x0, y0), (x1, y1), (30, 30, 30), 2)
+    for y in range(180, 700, 90):
+        cv2.line(img, (60, y), (360, y), (30, 30, 30), 2)
+    return img
+
+
+def shift_colour(img: np.ndarray, bgr_delta) -> np.ndarray:
+    return np.clip(img.astype(np.int16) + np.array(bgr_delta, np.int16), 0, 255).astype(np.uint8)
+
+
+def png_bytes(img: np.ndarray) -> bytes:
+    ok, buf = cv2.imencode(".png", img)
+    assert ok
+    return buf.tobytes()

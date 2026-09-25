@@ -34,6 +34,7 @@ class CheckResult:
     added_areas: int = 0  # separate places where the AI added geometry
     notes: list[str] = field(default_factory=list)  # quiet, informational
     warnings: list[str] = field(default_factory=list)  # worth the user's attention
+    valid: np.ndarray | None = None  # bool, working size: where the render has real pixels
 
     @property
     def recall(self) -> float:
@@ -73,7 +74,14 @@ def check_render(
     render: np.ndarray,
     settings: Settings | None = None,
     ignore_mask: np.ndarray | None = None,
+    reference_kind: str = "model",
 ) -> CheckResult:
+    """Compare ``render`` against ``original``.
+
+    ``reference_kind`` is "model" for a flat viewport export (the usual case) or
+    "render" when the reference is itself a photoreal render, so its lines are
+    found the same way as the render's.
+    """
     s = (settings or Settings()).validated()
     notes: list[str] = []
     warnings: list[str] = []
@@ -88,7 +96,9 @@ def check_render(
         msg = f"The render is a different shape from your model view, so we {how} it to match."
         (warnings if fitted.aspect_difference > 0.15 else notes).append(msg)
 
-    orig_edges = detect_edges(original, params_for_original(s.original_sensitivity))
+    ref_params = (params_for_render(s.render_sensitivity) if reference_kind == "render"
+                  else params_for_original(s.original_sensitivity))
+    orig_edges = detect_edges(original, ref_params)
     rend_params = params_for_render(s.render_sensitivity)
 
     rend_img, valid = fitted.image, fitted.valid
@@ -157,6 +167,7 @@ def check_render(
         added_areas=count_problem_areas(comparison.extra),
         notes=notes,
         warnings=warnings,
+        valid=valid,
     )
 
 

@@ -67,3 +67,13 @@ def fit_within(bgr: np.ndarray, max_side: int) -> np.ndarray:
     if scale >= 1:
         return bgr
     return cv2.resize(bgr, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+
+
+def image_pixels(data: bytes) -> int:
+    """Width x height from the file header (0 if unreadable). Cheap: doesn't decode pixels."""
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            w, h = im.size
+            return int(w) * int(h)
+    except Exception:
+        return 0
