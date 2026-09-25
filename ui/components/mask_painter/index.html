@@ -48,6 +48,7 @@
   const status = document.getElementById("status");
 
   let imageKey = null;
+  let labels = { empty: "Nothing ignored yet", painted: "Painted areas will be skipped" };
   let strokes = [];   // each stroke: {r, pts: [[x,y],...]}
   let current = null;
 
@@ -65,7 +66,7 @@
     ctx.drawImage(off, 0, 0);
     ctx.restore();
     undoBtn.disabled = clearBtn.disabled = strokes.length === 0;
-    status.textContent = strokes.length ? "Painted areas will be skipped" : "Nothing ignored yet";
+    status.textContent = strokes.length ? labels.painted : labels.empty;
   }
 
   function drawStroke(c, s) {
@@ -140,6 +141,7 @@
   window.addEventListener("message", e => {
     if (!e.data || e.data.type !== "streamlit:render") return;
     const args = e.data.args;
+    if (args.empty_text) labels = { empty: args.empty_text, painted: args.painted_text || labels.painted };
     if (args.ikey !== imageKey) {
       imageKey = args.ikey;
       // Restore earlier strokes if the panel was hidden and shown again.

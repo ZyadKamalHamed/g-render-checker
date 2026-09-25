@@ -32,13 +32,15 @@ def image_key(*arrays: np.ndarray) -> str:
     return h.hexdigest()[:16]
 
 
-def mask_painter(image: np.ndarray, key: str) -> np.ndarray | None:
-    """Let the user brush over areas to ignore. Returns a boolean mask or None."""
+def mask_painter(image: np.ndarray, key: str, empty_text: str | None = None,
+                 painted_text: str | None = None) -> np.ndarray | None:
+    """Let the user brush over areas (to ignore, by default). Returns a boolean mask or None."""
     shown = fit_within(image, 1000)
     ikey = image_key(image)
     saved = st.session_state.get(f"{key}__saved") or {}
     strokes = saved.get("strokes") if saved.get("key") == ikey else None
-    value = _mask_painter(image=data_url(shown, 1000), key=key, default=None, ikey=ikey, strokes=strokes)
+    value = _mask_painter(image=data_url(shown, 1000), key=key, default=None, ikey=ikey, strokes=strokes,
+                          empty_text=empty_text, painted_text=painted_text)
     # ``key`` is reserved by Streamlit, so the image identity travels as
     # ``ikey``; the frontend echoes it back so stale masks are ignored.
     if value and value.get("key") == ikey:
