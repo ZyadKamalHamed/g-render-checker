@@ -1,0 +1,25 @@
+# Render QA runs entirely on this computer. Nothing is sent anywhere.
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
+maxUploadSize = 200
+runOnSave = false
+fileWatcherType = "none"
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "none"
+
+[runner]
+magicEnabled = false
+
+[theme]
+base = "light"
+primaryColor = "#1c1c1c"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f4f4f5"
+textColor = "#1c1c1c"
+borderColor = "#e4e4e7"
+baseRadius = "10px"

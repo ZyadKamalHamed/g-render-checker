@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --ink: #1c1c1c; --muted: #6e6e73; --line: #e4e4e7; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; font-family: "Source Sans Pro", "Source Sans 3", -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: transparent; }
+  .stage { position: relative; width: 100%; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #fafafa; }
+  .stage img { display: block; width: 100%; height: auto; }
+  .stage img.top { position: absolute; inset: 0; height: 100%; }
+  .controls { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 15px; }
+  .controls span { color: var(--muted); white-space: nowrap; cursor: pointer; user-select: none; }
+  .controls span.on { color: var(--ink); font-weight: 600; }
+  input[type=range] { flex: 1; accent-color: var(--ink); }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <img id="a" alt="Your model view" />
+    <img id="b" class="top" alt="AI render" />
+  </div>
+  <div class="controls">
+    <span id="la">Your model</span>
+    <input id="fade" type="range" min="0" max="100" value="50" aria-label="Fade between your model and the AI render" />
+    <span id="lb">AI render</span>
+  </div>
+<script>
+  function send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data || {}), "*"); }
+  function setHeight() { send("streamlit:setFrameHeight", { height: document.body.scrollHeight + 4 }); }
+  const a = document.getElementById("a"), b = document.getElementById("b");
+  const fade = document.getElementById("fade");
+  const la = document.getElementById("la"), lb = document.getElementById("lb");
+  function update() {
+    const v = fade.value / 100;
+    b.style.opacity = v;
+    la.classList.toggle("on", v < 0.5);
+    lb.classList.toggle("on", v > 0.5);
+  }
+  fade.addEventListener("input", update);
+  la.addEventListener("click", () => { fade.value = 0; update(); });
+  lb.addEventListener("click", () => { fade.value = 100; update(); });
+  a.addEventListener("load", setHeight);
+  window.addEventListener("resize", setHeight);
+  let key = null;
+  window.addEventListener("message", e => {
+    if (!e.data || e.data.type !== "streamlit:render") return;
+    const args = e.data.args;
+    if (args.ikey === key) return;
+    key = args.ikey;
+    a.src = args.original; b.src = args.render;
+    update();
+  });
+  send("streamlit:componentReady", { apiVersion: 1 });
+</script>
+</body>
+</html>

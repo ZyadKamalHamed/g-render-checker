@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "render-qa",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["serve.py", "run", "app.py", "--server.port", "8765", "--server.address", "localhost"],
+      "port": 8765
+    }
+  ]
+}

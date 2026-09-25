@@ -1,0 +1,153 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --ink: #1c1c1c; --muted: #6e6e73; --line: #e4e4e7; --paint: 245, 158, 11; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; font-family: "Source Sans Pro", "Source Sans 3", -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: transparent; }
+  .toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; font-size: 15px; }
+  .toolbar label { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+  input[type=range] { accent-color: var(--ink); width: 160px; }
+  button { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+  button:hover { border-color: #a1a1aa; }
+  button:disabled { opacity: .45; cursor: default; }
+  .spacer { flex: 1; }
+  .status { color: var(--muted); font-size: 14px; }
+  .stage { position: relative; width: 100%; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); touch-action: none; }
+  .stage img, .stage canvas { display: block; width: 100%; height: auto; }
+  .stage canvas { position: absolute; inset: 0; height: 100%; cursor: none; }
+  #cursor { position: absolute; pointer-events: none; border: 2px solid rgba(28,28,28,.8); border-radius: 50%; box-shadow: 0 0 0 1px rgba(255,255,255,.8); transform: translate(-50%, -50%); display: none; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <label>Brush size <input id="size" type="range" min="10" max="160" value="50" /></label>
+    <span class="spacer"></span>
+    <span class="status" id="status">Nothing ignored yet</span>
+    <button id="undo" disabled>Undo</button>
+    <button id="clear" disabled>Clear</button>
+  </div>
+  <div class="stage" id="stage">
+    <img id="bg" alt="Your model view" />
+    <canvas id="paint"></canvas>
+    <div id="cursor"></div>
+  </div>
+<script>
+  // Minimal Streamlit component protocol, so no build step or external files are needed.
+  function send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data || {}), "*"); }
+  function setHeight() { send("streamlit:setFrameHeight", { height: document.body.scrollHeight + 4 }); }
+
+  const bg = document.getElementById("bg");
+  const canvas = document.getElementById("paint");
+  const ctx = canvas.getContext("2d");
+  const size = document.getElementById("size");
+  const cursor = document.getElementById("cursor");
+  const undoBtn = document.getElementById("undo");
+  const clearBtn = document.getElementById("clear");
+  const status = document.getElementById("status");
+
+  let imageKey = null;
+  let strokes = [];   // each stroke: {r, pts: [[x,y],...]}
+  let current = null;
+
+  function redraw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Draw every stroke into one path so overlaps don't get darker.
+    ctx.save();
+    ctx.globalAlpha = 1;
+    const off = document.createElement("canvas");
+    off.width = canvas.width; off.height = canvas.height;
+    const o = off.getContext("2d");
+    o.fillStyle = "#f59e0b"; o.strokeStyle = "#f59e0b"; o.lineCap = "round"; o.lineJoin = "round";
+    for (const s of strokes.concat(current ? [current] : [])) drawStroke(o, s);
+    ctx.globalAlpha = 0.55;
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+    undoBtn.disabled = clearBtn.disabled = strokes.length === 0;
+    status.textContent = strokes.length ? "Painted areas will be skipped" : "Nothing ignored yet";
+  }
+
+  function drawStroke(c, s) {
+    c.lineWidth = s.r * 2;
+    if (s.pts.length === 1) {
+      c.beginPath(); c.arc(s.pts[0][0], s.pts[0][1], s.r, 0, Math.PI * 2); c.fill();
+      return;
+    }
+    c.beginPath();
+    c.moveTo(s.pts[0][0], s.pts[0][1]);
+    for (const p of s.pts.slice(1)) c.lineTo(p[0], p[1]);
+    c.stroke();
+  }
+
+  function emit() {
+    if (!strokes.length) { send("streamlit:setComponentValue", { value: { key: imageKey, mask: null, strokes: [] }, dataType: "json" }); return; }
+    const m = document.createElement("canvas");
+    m.width = canvas.width; m.height = canvas.height;
+    const c = m.getContext("2d");
+    c.fillStyle = "#000"; c.fillRect(0, 0, m.width, m.height);
+    c.fillStyle = "#fff"; c.strokeStyle = "#fff"; c.lineCap = "round"; c.lineJoin = "round";
+    for (const s of strokes) drawStroke(c, s);
+    send("streamlit:setComponentValue", { value: { key: imageKey, mask: m.toDataURL("image/png"), strokes }, dataType: "json" });
+  }
+
+  function toCanvas(e) {
+    const r = canvas.getBoundingClientRect();
+    return [(e.clientX - r.left) * canvas.width / r.width, (e.clientY - r.top) * canvas.height / r.height];
+  }
+  function brushRadius() { return Number(size.value) * canvas.width / 1000 / 2; }
+
+  function moveCursor(e) {
+    const r = canvas.getBoundingClientRect();
+    const d = Number(size.value) * r.width / 1000;
+    cursor.style.display = "block";
+    cursor.style.width = cursor.style.height = d + "px";
+    cursor.style.left = (e.clientX - r.left) + "px";
+    cursor.style.top = (e.clientY - r.top) + "px";
+  }
+
+  canvas.addEventListener("pointerdown", e => {
+    canvas.setPointerCapture(e.pointerId);
+    current = { r: brushRadius(), pts: [toCanvas(e)] };
+    redraw();
+  });
+  canvas.addEventListener("pointermove", e => {
+    moveCursor(e);
+    if (!current) return;
+    const p = toCanvas(e), last = current.pts[current.pts.length - 1];
+    if (Math.hypot(p[0] - last[0], p[1] - last[1]) < 2) return;
+    current.pts.push([Math.round(p[0]), Math.round(p[1])]);
+    redraw();
+  });
+  function finish() {
+    if (!current) return;
+    strokes.push(current); current = null;
+    redraw(); emit();
+  }
+  canvas.addEventListener("pointerup", finish);
+  canvas.addEventListener("pointercancel", finish);
+  canvas.addEventListener("pointerleave", () => { cursor.style.display = "none"; });
+
+  undoBtn.addEventListener("click", () => { strokes.pop(); redraw(); emit(); });
+  clearBtn.addEventListener("click", () => { strokes = []; redraw(); emit(); });
+
+  bg.addEventListener("load", () => {
+    canvas.width = bg.naturalWidth; canvas.height = bg.naturalHeight;
+    redraw(); setHeight();
+  });
+  window.addEventListener("resize", setHeight);
+
+  window.addEventListener("message", e => {
+    if (!e.data || e.data.type !== "streamlit:render") return;
+    const args = e.data.args;
+    if (args.ikey !== imageKey) {
+      imageKey = args.ikey;
+      // Restore earlier strokes if the panel was hidden and shown again.
+      strokes = Array.isArray(args.strokes) ? args.strokes : []; current = null;
+      bg.src = args.image;
+    }
+  });
+  send("streamlit:componentReady", { apiVersion: 1 });
+</script>
+</body>
+</html>

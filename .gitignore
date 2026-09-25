@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.playwright-mcp/
+logs/
+.render-qa.json
+settings.json
+.DS_Store
+test_images/
+*.rqtest
