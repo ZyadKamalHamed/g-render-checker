@@ -120,14 +120,16 @@ All images are analysed at the existing working size (`Settings.work_size`, 1600
 
 ### Alignment reuse (`core/pipeline.py`)
 
-- Split `check_render` so that the fit + align step is a reusable function, `align_to(reference, image, settings, reference_kind) -> Aligned(image, valid, aligned, displacement, notes, warnings)`. `check_render` keeps its public behaviour, and the existing 28 tests must pass unchanged.
-- Add `reference_kind: "model" | "render" = "model"` to `check_render`. With `"render"`, the reference's lines are detected with the **render** edge parameters, since both images are photoreal.
+- `CheckResult` gains `valid: np.ndarray | None` (the pixels that came from the render after fitting and alignment).
+- `check_render` gains `reference_kind: "model" | "render" = "model"`. With `"render"`, the reference's lines are detected with the **render** edge parameters, since both images are photoreal.
+- Every render is brought into the **model-view frame** once, via its Drift check `check_render(model_view, render, …)`, which returns the aligned render and `valid`. All later comparisons (Kept against a base render, materials, Changed, Quality) use these aligned images, so they share one frame and size.
+- The existing 28 tests must pass unchanged.
 
 ### Kept (0–100)
 
 For an edit prompt whose base is `B` (the model view or a render):
 
-- **Lines:** `check_render(B, render, ignore_mask=zone, reference_kind=kind(B))`. The line score is `100 × F1`.
+- **Lines:** `check_render(B, render, ignore_mask=zone | ~B.valid, reference_kind=kind(B))`, with both images in the model-view frame. The line score is `100 × F1`.
 - **Materials:**
   - If B is the model view: `materials_from_model(model_view, render_aligned, regions, excluded=zone)`.
   - If B is a render: `materials_between_renders(base_aligned, render_aligned, regions, excluded=zone)`.
@@ -174,7 +176,7 @@ The **material overlay** is the render, washed out the same way as the existing 
 ### Quality (0–100, `core/quality.py`)
 
 - Reference = the model's **root render** in this prompt's ancestry. The root itself has no Quality score (it's the 100 baseline) and isn't averaged.
-- Compare area = valid pixels outside the union of the zones of every prompt **after** the root in the ancestry, including this one. The render is aligned to the reference with `align_to(reference, render, kind="render")`.
+- Compare area = valid pixels outside the union of the zones of every prompt **after** the root in the ancestry, including this one. Both images are already in the model-view frame.
 - Sub-scores, each clipped to 0–100:
   - **Sharpness:** ratio of the variance of the Laplacian (grey, in the area) of render to reference. `100 × min(1, ratio)`.
   - **Colour creep:** without normalisation, find the mean ΔE between the area means, the chroma ratio and the L-std (contrast) ratio. `100 − 4·ΔE − 100·|chroma−1| − 100·|contrast−1|`.
