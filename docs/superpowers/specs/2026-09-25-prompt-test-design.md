@@ -182,8 +182,8 @@ The **material overlay** is the render, washed out the same way as the existing 
   - **Colour creep:** without normalisation, find the mean ΔE between the area means, the chroma ratio and the L-std (contrast) ratio. `100 − 4·ΔE − 100·|chroma−1| − 100·|contrast−1|`.
   - **Artefacts:**
     - Noise: std of the high-pass residual (image minus a 5px Gaussian) in flat areas, meaning pixels where the reference's gradient is below its 40th percentile.
-    - Blockiness: mean gradient on the 8-px grid lines divided by the mean gradient off the grid.
-    - Take the render/reference ratio of each. `100 − 50·max(0, noise−1) − 50·max(0, block−1)`.
+    - Blockiness: mean gradient on the 8-px grid lines divided by the mean gradient off the grid, in the same flat areas.
+    - Take the render/reference ratio of each. `100 − 50·max(0, noise−1) − 25·log2(max(1, block))`.
   - **Resolution:** original pixel counts from the file headers. `100 × min(1, px_render / px_reference) ^ 0.5`.
 - **Quality** = mean of the four. The four sub-scores and the chain **step** number (depth after the root) are stored for the chart.
 - If the aspect ratio differs from the reference by more than 1%, add the warning "Output size changed between steps".
