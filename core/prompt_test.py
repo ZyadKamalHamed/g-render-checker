@@ -8,6 +8,7 @@ checks and sums them up per model.
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -101,6 +102,44 @@ def prompt_number(test: PromptTest, prompt_id: str) -> int:
 
 def edit_prompts(test: PromptTest) -> list[Prompt]:
     return [p for p in test.prompts if p.kind == EDIT]
+
+
+_NAMED = re.compile(r"(?:^|[^a-z0-9])(?:p|prompt)\s*0*(\d{1,2})(?![0-9])")
+_TRAILING = re.compile(r"(?:^|[^0-9.])0*(\d{1,2})(?=\.[a-z0-9]+$)")
+
+
+def prompt_from_filename(name: str, count: int) -> int | None:
+    """The prompt number a render's filename points at ("nano_p3.png", "render_05.jpg"), if any."""
+    name = name.lower()
+    m = _NAMED.search(name) or _TRAILING.search(name)
+    n = int(m.group(1)) if m else None
+    return n if n is not None and 1 <= n <= count else None
+
+
+def assign_files(test: PromptTest, model: ModelEntry, files: list[tuple[str, bytes]]) -> list[str]:
+    """Put dropped renders into this model's prompt slots. Returns one "file → where" line per file.
+
+    A file whose name points at a prompt goes there. The rest fill empty edit prompts in order.
+    """
+    taken: set[str] = set()
+    placed: dict[int, str] = {}
+    for i, (name, _) in enumerate(files):
+        n = prompt_from_filename(name, len(test.prompts))
+        pid = test.prompts[n - 1].id if n else None
+        if pid and pid not in taken:
+            taken.add(pid)
+            placed[i] = pid
+    empty = [p.id for p in edit_prompts(test) if p.id not in taken and not slot(model, p.id).image]
+    lines = []
+    for i, (name, data) in enumerate(files):
+        pid = placed.get(i) or (empty.pop(0) if empty else None)
+        if pid is None:
+            lines.append(f"{name} → not used (no empty prompt left)")
+            continue
+        s = slot(model, pid)
+        s.image, s.filename = data, name
+        lines.append(f"{name} → Prompt {prompt_number(test, pid)}")
+    return lines
 
 
 def _index(test: PromptTest, prompt: Prompt) -> int:

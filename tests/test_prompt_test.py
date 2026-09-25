@@ -201,3 +201,30 @@ def test_weights_are_settings():
     s = Settings(weight_kept=500, weight_rating=-3).validated()
     assert s.weight_kept == 100 and s.weight_rating == 0
     assert Settings().weight_drift == 20 and Settings().weight_quality == 15
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("nano_p3.png", 3), ("Prompt 4 - flare.jpg", 4), ("render_05.webp", 5), ("gpt-2.png", 2),
+    ("flare.png", None), ("p12.png", None), ("gpt-2.5-flare_p3.png", 3), ("gpt-2.5-flare.png", None),
+])
+def test_prompt_from_filename(name, expected):
+    from core.prompt_test import prompt_from_filename
+    assert prompt_from_filename(name, 7) == expected
+
+
+def test_assign_files_fills_detected_then_empty_edit_slots():
+    from core.prompt_test import assign_files
+    t = PromptTest()  # 6 edit prompts + 1 guardrail
+    m = ModelEntry(id="m", tool="Leonardo")
+    m.slots[t.prompts[0].id] = Slot(image=b"old", filename="old.png")
+    files = [("nano_p3.png", b"3"), ("extra.png", b"x"), ("again_p3.png", b"3b"), ("p7.png", b"7")]
+    files += [(f"more{c}.png", b"m") for c in "abcde"]
+    lines = assign_files(t, m, files)
+    assert m.slots[t.prompts[2].id].image == b"3" and m.slots[t.prompts[2].id].filename == "nano_p3.png"
+    assert m.slots[t.prompts[6].id].image == b"7"  # a guardrail prompt named in the file takes it
+    assert m.slots[t.prompts[1].id].image == b"x"  # first leftover goes to the first empty edit slot
+    assert m.slots[t.prompts[0].id].image == b"old"  # filled slots are never overwritten by leftovers
+    assert lines[0] == "nano_p3.png → Prompt 3"
+    assert lines[1] == "extra.png → Prompt 2"
+    assert lines[2] == "again_p3.png → Prompt 4"  # prompt 3 was already taken in this drop
+    assert lines[-1] == "moree.png → not used (no empty prompt left)"
