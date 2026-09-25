@@ -52,8 +52,9 @@ def render_header() -> None:
                 st.session_state.ptest_toast = True
                 st.rerun()
     with c2:
-        st.download_button("Download test", save_test(t), f"{safe_filename(t.name)}.rqtest", "application/zip",
-                           on_click="ignore", icon=":material/download:", width="stretch")
+        # Zipped when clicked, not on every rerun: a test with real renders can be hundreds of MB.
+        st.download_button("Download test", lambda: save_test(t), f"{safe_filename(t.name)}.rqtest",
+                           "application/zip", on_click="ignore", icon=":material/download:", width="stretch")
     st.caption("Nothing is saved automatically. Download the test to keep it.")
 
     _init("pt_name", t.name)

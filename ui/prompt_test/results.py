@@ -68,7 +68,8 @@ def render_run_and_results() -> None:
     results: TestResults | None = st.session_state.get("ptest_results")
     if results is None:
         return
-    if results.signature != analysis_signature(t, settings):
+    stale = results.signature != analysis_signature(t, settings)
+    if stale:
         st.info("Something changed since the last run. Press **Run all checks** to update.")
 
     summaries = summarise(t, results, settings)
@@ -80,7 +81,7 @@ def render_run_and_results() -> None:
         _leaderboard(t, scored, settings)
         _quality_chart(t, results)
     _grid(t, results)
-    _downloads(t, results, summaries)
+    _downloads(t, results, summaries, stale)
 
 
 # ---------------------------------------------------------------- results
@@ -296,7 +297,7 @@ def _csv(t: PromptTest, results: TestResults) -> bytes:
     return df.to_csv(index=False).encode("utf-8-sig")  # BOM so Excel opens it cleanly
 
 
-def _downloads(t: PromptTest, results: TestResults, summaries: list[ModelSummary]) -> None:
+def _downloads(t: PromptTest, results: TestResults, summaries: list[ModelSummary], stale: bool) -> None:
     when = datetime.now()
     stamp = f"{when:%Y-%m-%d}"
     name = safe_filename(t.name)
@@ -305,7 +306,9 @@ def _downloads(t: PromptTest, results: TestResults, summaries: list[ModelSummary
     # Built when clicked, so changing a rating doesn't rebuild the deck on every rerun.
     d1.download_button("Download exec report (PowerPoint)", lambda: build_deck(t, results, summaries, when),
                        f"{name}-report-{stamp}.pptx", PPTX, type="primary", width="stretch", on_click="ignore",
-                       icon=":material/slideshow:")
+                       icon=":material/slideshow:", disabled=stale)
     d2.download_button("Download results (CSV)", _csv(t, results), f"{name}-results-{stamp}.csv", "text/csv",
-                       width="stretch", on_click="ignore", icon=":material/table:")
+                       width="stretch", on_click="ignore", icon=":material/table:", disabled=stale)
+    if stale:  # old scores next to new images would mislead whoever reads the report
+        st.caption("Run all checks again to download the report and results.")
     st.caption("Download the test too if you might want to come back to it.")

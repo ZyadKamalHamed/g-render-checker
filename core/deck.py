@@ -229,8 +229,8 @@ def _answer_reason(best: ModelSummary) -> str:
     phrases = {
         "kept": lambda v: f"Kept {v:.0f}/100 of what it was told to keep",
         "rating": lambda v: f"Scored {v:.0f}/100 on your ratings",
-        "drift": lambda v: f"Stayed closest to your model ({v:.0f}/100)",
-        "quality": lambda v: f"Showed the least degradation ({v:.0f}/100)",
+        "drift": lambda v: f"Scored {v:.0f}/100 for staying close to your model",
+        "quality": lambda v: f"Held its image quality at {v:.0f}/100 over the edits",
     }
     parts = {k: getattr(best, k) for k in best.parts_used if getattr(best, k) is not None}
     if not parts:
@@ -298,7 +298,12 @@ def _chaining(test: PromptTest) -> str:
         return "Every prompt started again from the model view"
     if all(p.starts_from == FROM_PREVIOUS for p in later):
         return "Each prompt edited the render from the prompt before it"
-    return "Prompts edited earlier renders as a chain; some started again from the model view"
+    restarts = []
+    if any(p.starts_from == FROM_MODEL for p in later):
+        restarts.append("some started again from the model view")
+    if any(p.starts_from not in (FROM_MODEL, FROM_PREVIOUS) for p in later):
+        restarts.append("some went back to an earlier prompt's render")
+    return "Prompts edited earlier renders as a chain; " + " and ".join(restarts)
 
 
 def _how(prs, test: PromptTest) -> None:
