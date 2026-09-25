@@ -7,13 +7,25 @@ checks and sums them up per model.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import datetime
+from typing import Callable
 
 import cv2
 import numpy as np
 
+from .change import NOTHING_CHANGED_BELOW, changed_fraction
+from .imageio import ImageLoadError, encode_jpeg, encode_png, fit_within, image_pixels, load_image
+from .materials import (
+    MaterialRegion, MaterialResult, material_overlay, materials_between_renders, materials_from_model,
+    segment_materials,
+)
 from .models import label as model_label
+from .pipeline import check_render
+from .quality import quality
+from .settings import WEIGHT_FIELDS, Settings
 
 EDIT, GUARDRAIL = "edit", "guardrail"
 FROM_MODEL, FROM_PREVIOUS = "model", "previous"  # or a prompt id
@@ -200,3 +212,249 @@ def remove_prompt(test: PromptTest, prompt_id: str) -> None:
             p.starts_from = FROM_PREVIOUS
     for m in test.models:
         m.slots.pop(prompt_id, None)
+
+
+# --- running a test -----------------------------------------------------------------
+
+SLOT_ERROR = "Couldn't check this one. Try exporting it again as PNG."
+NO_ZONE_NOTE = "No change zone, so everything counts as should-stay-the-same."
+NOTHING_CHANGED_WARNING = "Nothing changed in the zone. The model may have ignored the prompt."
+NO_MATERIALS_NOTE = "No materials could be compared, so Kept uses lines only."
+_PREVIEW_SIDE = 1200
+
+
+@dataclass
+class RenderResult:
+    model_id: str
+    prompt_id: str
+    prompt_number: int = 0
+    base_label: str = ""  # "Model view" / "P2 · Add confusing details"
+    kept: float | None = None
+    lines: float | None = None
+    materials: MaterialResult | None = None
+    material_summary: str = ""  # "7 of 8 materials kept"
+    changed_fraction: float | None = None
+    nothing_changed: bool = False
+    drift: float | None = None
+    quality: float | None = None
+    quality_parts: dict[str, float] | None = None
+    step: int = 0
+    overlay_png: bytes = b""
+    material_overlay_png: bytes | None = None
+    aligned_render_jpg: bytes = b""
+    base_jpg: bytes = b""
+    notes: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+@dataclass
+class TestResults:
+    __test__ = False  # not a pytest class
+
+    renders: dict[tuple[str, str], RenderResult]
+    regions: list[MaterialRegion]
+    signature: str
+    when: datetime
+
+
+@dataclass
+class ModelSummary:
+    model_id: str
+    label: str
+    overall: float | None
+    kept: float | None
+    drift: float | None
+    quality: float | None
+    rating: float | None
+    ran: int
+    total_edit: int
+    ratings_missing: int
+    nothing_changed: int
+    guardrails: dict[str, int]  # refused / partly / complied / not_recorded
+    parts_used: list[str]
+
+
+def _sha(data: bytes | None) -> bytes:
+    return hashlib.sha1(data or b"").digest()
+
+
+def analysis_signature(test: PromptTest, settings: Settings) -> str:
+    """Changes whenever something that affects the checks changes (not ratings or weights)."""
+    h = hashlib.sha1(_sha(test.model_view))
+    for p in test.prompts:
+        h.update(repr((p.id, p.kind, p.starts_from, sorted(p.zone_materials))).encode())
+        if p.zone is not None:
+            h.update(repr(p.zone.shape).encode() + np.packbits(p.zone.astype(bool)).tobytes())
+    for m in test.models:
+        for pid, s in sorted(m.slots.items()):
+            if s.image:
+                h.update(f"{m.id}/{pid}".encode() + _sha(s.image))
+    s = replace(settings.validated(), **{f: 0 for f in WEIGHT_FIELDS})
+    h.update(repr(s).encode())
+    return h.hexdigest()
+
+
+def _preview(img: np.ndarray) -> bytes:
+    return encode_jpeg(fit_within(img, _PREVIEW_SIDE), 85)
+
+
+def run_test(test: PromptTest, settings: Settings | None = None,
+             progress: Callable[[int, int, str], None] | None = None) -> TestResults:
+    s = (settings or Settings()).validated()
+    if not test.model_view:
+        raise ValueError("Add a model view first.")
+    mv = fit_within(load_image(test.model_view), s.work_size)
+    shape = mv.shape[:2]
+    regions = segment_materials(mv)
+    zones = {p.id: zone_mask(p, shape, regions) for p in test.prompts}
+    edits = edit_prompts(test)
+    jobs = [(m, p) for m in test.models for p in edits if m.slots.get(p.id) and m.slots[p.id].image]
+    renders: dict[tuple[str, str], RenderResult] = {}
+
+    def union(prompts) -> np.ndarray:
+        out = np.zeros(shape, bool)
+        for p in prompts:
+            out |= zones[p.id]
+        return out
+
+    done = 0
+    for m in test.models:
+        # (aligned render, valid, original pixel count, aspect) per prompt with a usable render
+        aligned: dict[str, tuple[np.ndarray, np.ndarray, int, float]] = {}
+        for p in edits:
+            sl = m.slots.get(p.id)
+            if not sl or not sl.image:
+                continue
+            n = prompt_number(test, p.id)
+            if progress:
+                progress(done, len(jobs), f"Checking {m.label}, prompt {n} ({done + 1} of {len(jobs)})")
+            done += 1
+            rr = RenderResult(model_id=m.id, prompt_id=p.id, prompt_number=n)
+            renders[(m.id, p.id)] = rr
+            try:
+                _check_slot(test, s, m, p, sl, mv, regions, zones, union, aligned, rr)
+            except ImageLoadError as e:
+                rr.error = str(e)
+            except Exception:  # one bad render never stops the run
+                rr.error = SLOT_ERROR
+    if progress:
+        progress(len(jobs), len(jobs), "All done")
+    return TestResults(renders=renders, regions=regions, signature=analysis_signature(test, s), when=datetime.now())
+
+
+def _check_slot(test, s, m, p, sl, mv, regions, zones, union, aligned, rr: RenderResult) -> None:
+    raw = load_image(sl.image)
+    chain = ancestors(test, p)
+    zone = zones[p.id]
+
+    drift = check_render(mv, raw, s, ignore_mask=union(chain), reference_kind="model")
+    img, valid = drift.render, drift.valid
+    rr.drift = drift.score
+
+    base_id, note = base_for_model(test, m, p, available=set(aligned))
+    if note:
+        rr.notes.append(note)
+    if base_id == FROM_MODEL:
+        rr.base_label = "Model view"
+        kept_check = drift if len(chain) == 1 else check_render(mv, raw, s, ignore_mask=zone)
+        base_img, base_valid = mv, np.ones(mv.shape[:2], bool)
+        mat = materials_from_model(mv, img, regions, excluded=zone, valid=valid)
+    else:
+        bp = next(q for q in test.prompts if q.id == base_id)
+        rr.base_label = f"P{prompt_number(test, base_id)} · {bp.title}"
+        base_img, base_valid = aligned[base_id][:2]
+        kept_check = check_render(base_img, img, s, ignore_mask=zone | ~base_valid | ~valid, reference_kind="render")
+        mat = materials_between_renders(base_img, img, regions, excluded=zone, valid=valid & base_valid)
+    rr.lines = kept_check.score
+    rr.materials = mat
+    if mat.total:
+        rr.kept = 0.6 * rr.lines + 0.4 * 100 * mat.score
+        rr.material_summary = f"{mat.kept_count} of {mat.total} materials kept"
+    else:
+        rr.kept = rr.lines
+        rr.notes.append(NO_MATERIALS_NOTE)
+    rr.notes += kept_check.notes
+    rr.warnings += kept_check.warnings
+
+    if zone.any():
+        rr.changed_fraction = changed_fraction(base_img, img, zone, valid & base_valid)
+        rr.nothing_changed = rr.changed_fraction is not None and rr.changed_fraction < NOTHING_CHANGED_BELOW
+        if rr.nothing_changed:
+            rr.warnings.append(NOTHING_CHANGED_WARNING)
+    elif len(chain) > 1:
+        rr.notes.append(NO_ZONE_NOTE)
+
+    h, w = raw.shape[:2]
+    aligned[p.id] = (img, valid, image_pixels(sl.image), w / h)
+    with_renders = [q for q in chain if q.id in aligned]
+    root = with_renders[0]
+    rr.step = len(with_renders) - 1
+    if root.id != p.id:
+        r_img, r_valid, r_px, r_aspect = aligned[root.id]
+        after_root = chain[chain.index(root) + 1:]
+        q = quality(r_img, img, area=valid & r_valid & ~union(after_root), ref_pixels=r_px,
+                    render_pixels=image_pixels(sl.image), ref_aspect=r_aspect, render_aspect=w / h)
+        rr.quality, rr.quality_parts = q.score, q.parts
+        rr.warnings += q.notes
+
+    rr.overlay_png = encode_png(fit_within(kept_check.overlay, _PREVIEW_SIDE))
+    if any(not c.kept for c in mat.regions):
+        rr.material_overlay_png = encode_png(fit_within(material_overlay(img, mat, regions), _PREVIEW_SIDE))
+    rr.aligned_render_jpg = _preview(img)
+    rr.base_jpg = _preview(base_img)
+
+
+def _mean(values) -> float | None:
+    values = [v for v in values if v is not None]
+    return float(np.mean(values)) if values else None
+
+
+def summarise(test: PromptTest, results: TestResults, settings: Settings | None = None) -> list[ModelSummary]:
+    s = (settings or Settings()).validated()
+    weights = {"kept": s.weight_kept, "rating": s.weight_rating, "drift": s.weight_drift,
+               "quality": s.weight_quality}
+    edits = edit_prompts(test)
+    guards = [p for p in test.prompts if p.kind == GUARDRAIL]
+    out = []
+    for m in test.models:
+        ran = [results.renders[(m.id, p.id)] for p in edits
+               if (m.id, p.id) in results.renders and results.renders[(m.id, p.id)].error is None]
+        ratings = [m.slots[p.id].rating for p in edits if p.id in m.slots and m.slots[p.id].rating]
+        parts = {
+            "kept": _mean(r.kept for r in ran),
+            "drift": _mean(r.drift for r in ran),
+            "quality": _mean(r.quality for r in ran),
+            "rating": _mean((r - 1) / 4 * 100 for r in ratings),
+        }
+        used = [k for k in ("kept", "rating", "drift", "quality") if parts[k] is not None and weights[k] > 0]
+        total_w = sum(weights[k] for k in used)
+        overall = sum(weights[k] * parts[k] for k in used) / total_w if total_w else None
+        counts = {"refused": 0, "partly": 0, "complied": 0, "not_recorded": 0}
+        for g in guards:
+            outcome = m.slots.get(g.id, Slot()).outcome
+            counts[outcome if outcome in OUTCOMES else "not_recorded"] += 1
+        out.append(ModelSummary(
+            model_id=m.id, label=m.label, overall=overall, kept=parts["kept"], drift=parts["drift"],
+            quality=parts["quality"], rating=parts["rating"], ran=len(ran), total_edit=len(edits),
+            ratings_missing=len(edits) - len(ratings), nothing_changed=sum(r.nothing_changed for r in ran),
+            guardrails=counts, parts_used=used,
+        ))
+    out.sort(key=lambda x: (x.overall is None, -(x.overall or 0), -(x.kept or 0)))
+    return out
+
+
+def quality_series(test: PromptTest, results: TestResults) -> list[dict]:
+    """Rows for the "quality over edits" chart: the root render counts as 100."""
+    rows = []
+    for m in test.models:
+        for p in edit_prompts(test):
+            r = results.renders.get((m.id, p.id))
+            if not r or r.error:
+                continue
+            q = 100.0 if r.quality is None and r.step == 0 else r.quality
+            if q is None:
+                continue
+            rows.append({"model": m.id, "label": m.label, "step": r.step,
+                         "prompt": f"P{r.prompt_number} · {p.title}", "quality": q})
+    return rows

@@ -15,6 +15,7 @@ SETTINGS_FILE = Path(__file__).resolve().parent.parent / "settings.json"
 AI_TOOLS = ["Leonardo", "Gendo", "Veras", "Vectorworks AI Visualizer", "Other"]
 
 FIT_MODES = ("crop", "pad", "stretch")
+WEIGHT_FIELDS = ("weight_kept", "weight_rating", "weight_drift", "weight_quality")
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,12 @@ class Settings:
     # Longest side (px) images are analysed at. Keeps the tolerance meaningful
     # regardless of export size, and keeps things quick.
     work_size: int = 1600
+    # Prompt test: how much each part counts towards a model's overall score.
+    # Only their size relative to each other matters.
+    weight_kept: int = 35
+    weight_rating: int = 30
+    weight_drift: int = 20
+    weight_quality: int = 15
 
     def validated(self) -> "Settings":
         good = int(min(max(self.good_threshold, 1), 100))
@@ -47,6 +54,7 @@ class Settings:
             ok_threshold=ok,
             fit_mode=self.fit_mode if self.fit_mode in FIT_MODES else "crop",
             work_size=int(min(max(self.work_size, 600), 2500)),
+            **{f: int(min(max(getattr(self, f), 0), 100)) for f in WEIGHT_FIELDS},
         )
 
 
