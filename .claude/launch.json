@@ -4,26 +4,8 @@
     {
       "name": "render-qa",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": [
-        "serve.py",
-        "run",
-        "app.py",
-        "--server.port",
-        "8765",
-        "--server.address",
-        "localhost"
-      ],
+      "runtimeArgs": ["serve.py", "run", "app.py", "--server.port", "8765", "--server.address", "localhost"],
       "port": 8765
-    },
-    {
-      "name": "fixtures",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": [
-        "/private/tmp/claude-502/-Users-Zyad-G-store-Coding-g-render-checker/109975b3-b877-4041-b87e-5d74f1ca2ef0/scratchpad/cors_server.py",
-        "/private/tmp/claude-502/-Users-Zyad-G-store-Coding-g-render-checker/109975b3-b877-4041-b87e-5d74f1ca2ef0/scratchpad/fixtures",
-        "8799"
-      ],
-      "port": 8799
     }
   ]
 }
